@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Doc Search - Zoom Control</title>
+    <title>Smart Doc Search - Active State</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -64,6 +64,16 @@
             padding: 0 2px;
             border-radius: 2px;
             border-bottom: 2px solid #eab308;
+        }
+
+        /* Active Result Item Style */
+        .result-item.active {
+            background-color: #eff6ff; /* blue-50 */
+            border-left-color: #2563eb; /* blue-600 */
+        }
+        .result-item.active p {
+            font-weight: 600;
+            color: #1e3a8a; /* blue-900 */
         }
     </style>
 </head>
@@ -144,7 +154,7 @@
                     <span id="viewerPageInfo" class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hidden whitespace-nowrap">Trang 1</span>
                 </div>
                 
-                <!-- NEW: ZOOM CONTROLS -->
+                <!-- ZOOM CONTROLS -->
                 <div class="flex items-center gap-1.5 md:gap-3 bg-gray-50 p-1 rounded-lg border border-gray-200">
                     <!-- Page Nav -->
                     <div class="flex items-center">
@@ -177,7 +187,6 @@
                                 <option value="2.5">250%</option>
                                 <option value="3.0">300%</option>
                             </select>
-                            <!-- Custom arrow for select -->
                             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-gray-500">
                                 <svg class="h-3 w-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
                             </div>
@@ -210,9 +219,10 @@
         let uploadedFiles = []; 
         let currentPdfDoc = null;
         let currentPageNum = 1;
-        let currentScale = 1.0; // Default 100%
+        let currentScale = 1.0; 
         let currentFileIndex = -1;
         let globalKeyword = "";
+        let currentActiveResultId = null; // Track active item
 
         // --- UTILS: TOAST ---
         function showToast(msg, type='info') {
@@ -237,20 +247,12 @@
         // --- ZOOM LOGIC ---
         function updateZoomUI(scale) {
             const select = document.getElementById('zoomSelect');
-            const percent = Math.round(scale * 100);
-            
-            // Try to find exact match in options
-            let matched = false;
             for(let opt of select.options) {
                 if(Math.abs(parseFloat(opt.value) - scale) < 0.05) {
                     select.value = opt.value;
-                    matched = true;
                     break;
                 }
             }
-            
-            // If custom zoom level (via buttons), we might want to show it roughly or just leave it
-            // For simplicity, we just keep the value logic internal if not matched perfectly
         }
 
         function setSpecificZoom(val) {
@@ -260,17 +262,15 @@
 
         function applyZoom(delta) {
             let newScale = currentScale + delta;
-            newScale = Math.max(0.5, Math.min(3.0, newScale)); // Limit 50% - 300%
+            newScale = Math.max(0.5, Math.min(3.0, newScale));
             currentScale = newScale;
-            
             updateZoomUI(currentScale);
             refreshCurrentView();
         }
 
         function refreshCurrentView() {
             if(currentFileIndex === -1) return;
-            // Re-call viewOriginal with current parameters
-            viewOriginal(currentFileIndex, currentPageNum, true); // true = prevent scroll reset if desired
+            viewOriginal(currentFileIndex, currentPageNum, true);
         }
 
         // --- SEARCH ENGINE ---
@@ -381,7 +381,7 @@
             });
         }
 
-        // --- RENDER CARD ---
+        // --- RENDER CARD (UPDATED WITH ID AND ACTIVE HANDLER) ---
         function renderResultCard(container, fileName, fileIndex, matches) {
             const card = document.createElement('div');
             card.className = "bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition";
@@ -390,9 +390,14 @@
             if(fileName.endsWith('pdf')) icon = 'file-text';
             if(fileName.endsWith('docx')) icon = 'file-type-2';
             
-            const matchesHTML = matches.map((m, idx) => `
-                <div onclick="viewOriginal(${fileIndex}, ${m.pageNum})" 
-                     class="cursor-pointer p-3 hover:bg-blue-50 transition border-l-4 border-transparent hover:border-blue-500 group">
+            const matchesHTML = matches.map((m, idx) => {
+                // Generate Unique ID for DOM Element
+                const resultId = `result-${fileIndex}-${idx}`;
+                
+                return `
+                <div id="${resultId}"
+                     onclick="viewOriginal(${fileIndex}, ${m.pageNum}, false, '${resultId}')" 
+                     class="result-item cursor-pointer p-3 transition border-l-4 border-transparent hover:bg-gray-50 hover:border-blue-300 group">
                     <div class="flex items-center gap-2 mb-1">
                         <span class="text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-600 px-2 py-0.5 rounded group-hover:bg-blue-200 group-hover:text-blue-800">
                             Trang ${m.pageNum}
@@ -405,7 +410,7 @@
                         "${m.snippet}"
                     </p>
                 </div>
-            `).join('');
+            `}).join('');
 
             card.innerHTML = `
                 <div class="bg-gray-50 px-4 py-3 border-b border-gray-100 flex items-center gap-2">
@@ -421,17 +426,31 @@
             lucide.createIcons();
         }
 
-        // --- VIEWER LOGIC ---
+        // --- VIEWER LOGIC (UPDATED WITH ACTIVE STATE LOGIC) ---
         
-        async function viewOriginal(fileIndex, pageNum, preserveView = false) {
+        async function viewOriginal(fileIndex, pageNum, preserveView = false, clickedElementId = null) {
             const file = uploadedFiles[fileIndex];
             
-            // Only clear if changing file
+            // --- ACTIVE STATE HANDLING ---
+            if (clickedElementId) {
+                // Remove active class from old item
+                if (currentActiveResultId) {
+                    const oldEl = document.getElementById(currentActiveResultId);
+                    if (oldEl) oldEl.classList.remove('active');
+                }
+                
+                // Add active class to new item
+                const newEl = document.getElementById(clickedElementId);
+                if (newEl) newEl.classList.add('active');
+                
+                currentActiveResultId = clickedElementId;
+            }
+            // -----------------------------
+            
             const isFileChange = currentFileIndex !== fileIndex;
             currentFileIndex = fileIndex;
             currentPageNum = pageNum;
 
-            // Update UI
             document.getElementById('viewerPlaceholder').classList.add('hidden');
             document.getElementById('viewerTitle').innerText = file.name;
             document.getElementById('viewerPageInfo').classList.remove('hidden');
@@ -444,9 +463,6 @@
             if (ext === 'pdf') {
                 pdfContainer.classList.remove('hidden');
                 htmlContainer.classList.add('hidden');
-                
-                // If refreshing zoom (preserveView), we re-render canvas
-                // We wipe content to redraw
                 pdfContainer.innerHTML = '';
                 await renderPDFPage(file, pageNum);
 
@@ -458,9 +474,7 @@
                     htmlContainer.innerHTML = '';
                     await renderHTMLContent(file, pageNum);
                 } else {
-                    // Just update Zoom
                     htmlContainer.style.transform = `scale(${currentScale})`;
-                    // If zoom > 1, ensure origin is top-center or let user scroll
                     if(currentScale > 1) htmlContainer.style.transformOrigin = 'top left'; 
                     else htmlContainer.style.transformOrigin = 'top center';
                 }
@@ -488,7 +502,6 @@
 
             await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-            // --- HIGHLIGHT LOGIC ---
             if(globalKeyword) {
                 const textContent = await page.getTextContent();
                 context.globalAlpha = 0.4;
@@ -520,7 +533,6 @@
         // 2. HTML RENDERER
         async function renderHTMLContent(file, pageNum) {
             const container = document.getElementById('html-render-container');
-            // Reset Scale for new render
             container.style.transform = `scale(${currentScale})`;
             container.style.transformOrigin = currentScale > 1 ? 'top left' : 'top center';
 
@@ -574,7 +586,7 @@
             if(!currentPdfDoc) return;
             const newPage = currentPageNum + delta;
             if(newPage >= 1 && newPage <= currentPdfDoc.numPages) {
-                viewOriginal(currentFileIndex, newPage);
+                viewOriginal(currentFileIndex, newPage, false, null);
             }
         }
 
