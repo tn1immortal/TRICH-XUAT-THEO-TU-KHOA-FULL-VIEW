@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Doc Search - Full View Mode</title>
+    <title>Smart Doc Search - Highlight Original</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,7 +14,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
-    <!-- Icons (Lucide via UNPKG for lightweight SVG) -->
+    <!-- Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <script>
@@ -23,22 +23,13 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        serif: ['Merriweather', 'Georgia', 'serif'],
                         sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Arial', 'sans-serif'],
                     },
                     animation: {
-                        'slide-in': 'slideIn 0.3s ease-out',
                         'fade-in': 'fadeIn 0.2s ease-out',
                     },
                     keyframes: {
-                        slideIn: {
-                            '0%': { transform: 'translateY(100%)', opacity: '0' },
-                            '100%': { transform: 'translateY(0)', opacity: '1' },
-                        },
-                        fadeIn: {
-                            '0%': { opacity: '0' },
-                            '100%': { opacity: '1' },
-                        }
+                        fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } }
                     }
                 }
             }
@@ -49,380 +40,238 @@
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-        /* Document Paper Effect */
-        .paper-sheet {
-            background: white;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0,0,0,0.02);
-            min-height: 1000px; /* Simulated A4 height */
-            padding: 40px;
-            margin: 0 auto;
-            position: relative;
+        
+        /* PDF Canvas Container */
+        #pdf-render-container {
+            display: flex;
+            justify-content: center;
+            background-color: #525659; /* Standard PDF Viewer Background */
+            padding: 2rem;
+            min-height: 100%;
+        }
+        
+        canvas {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+            max-width: 100%;
+            height: auto !important;
         }
 
-        /* Highlights */
-        .highlight {
-            background-color: #fef08a; /* yellow-200 */
-            color: #854d0e; /* yellow-800 */
+        /* Highlight Marker in Text (for snippets & HTML viewer) */
+        .highlight-text {
+            background-color: #fef08a; /* Yellow-200 */
+            color: #854d0e; /* Yellow-800 */
+            font-weight: bold;
             padding: 0 2px;
             border-radius: 2px;
-            font-weight: 600;
             border-bottom: 2px solid #eab308;
-        }
-
-        /* Loader */
-        .loader {
-            border: 3px solid #e2e8f0;
-            border-top: 3px solid #3b82f6;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        /* Typography for Reading */
-        .prose-content {
-            white-space: pre-wrap;
-            line-height: 1.8;
-            color: #1e293b;
-            font-size: 1.05rem;
-        }
-        .prose-content h1, .prose-content h2, .prose-content h3 { font-weight: 700; margin-top: 1em; margin-bottom: 0.5em; color: #0f172a; }
-        .prose-content p { margin-bottom: 1em; }
-        
-        /* Print Styles */
-        @media print {
-            body * { visibility: hidden; }
-            #docViewerModal, #docViewerModal * { visibility: visible; }
-            #docViewerModal { position: absolute; left: 0; top: 0; background: white; padding: 0; }
-            .no-print { display: none !important; }
-            .paper-sheet { box-shadow: none; min-height: auto; padding: 0; margin: 0; }
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans h-screen flex flex-col overflow-hidden">
+<body class="bg-gray-100 text-gray-800 font-sans h-screen flex flex-col overflow-hidden">
 
-    <!-- TOAST NOTIFICATION CONTAINER -->
+    <!-- TOAST NOTIFICATION -->
     <div id="toastContainer" class="fixed top-5 right-5 z-[100] flex flex-col gap-3"></div>
 
     <!-- MAIN LAYOUT -->
-    <div class="flex h-full max-w-[1600px] mx-auto w-full shadow-2xl bg-white overflow-hidden">
+    <div class="flex h-full max-w-[1920px] mx-auto w-full shadow-2xl bg-white overflow-hidden">
         
-        <!-- SIDEBAR (Search & History) -->
-        <div class="w-full md:w-1/3 lg:w-1/4 bg-gray-50 border-r border-gray-200 flex flex-col h-full">
-            <div class="p-4 border-b border-gray-200 bg-white">
+        <!-- SIDEBAR: INPUT & RESULTS -->
+        <div class="w-full md:w-5/12 lg:w-1/3 bg-white border-r border-gray-200 flex flex-col h-full z-10 shadow-lg">
+            <!-- Header -->
+            <div class="p-5 border-b border-gray-100 bg-gray-50">
                 <h1 class="text-xl font-bold text-blue-800 flex items-center gap-2">
-                    <i data-lucide="search-code" class="w-6 h-6"></i>
-                    Tra Cứu Thông Minh
+                    <i data-lucide="scan-search" class="w-6 h-6"></i>
+                    Smart Search
                 </h1>
-                <p class="text-xs text-gray-500 mt-1">Hỗ trợ PDF, DOCX, Excel, Web</p>
+                <p class="text-xs text-gray-500 mt-1">Tìm kiếm & Highlight bản gốc</p>
             </div>
 
-            <!-- Inputs -->
-            <div class="p-4 flex-1 overflow-y-auto">
-                <!-- Drop Zone -->
-                <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-blue-50 hover:border-blue-400 transition cursor-pointer mb-4 group relative bg-white">
-                    <input type="file" id="fileInput" accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.html,.htm,.xml,.json" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                    <i data-lucide="upload-cloud" class="w-8 h-8 mx-auto text-gray-400 group-hover:text-blue-500 mb-2 transition"></i>
-                    <p class="text-sm font-medium text-gray-600">Kéo thả hoặc Chọn file</p>
-                    <p id="fileCountLabel" class="text-xs text-gray-400 mt-1">Chưa chọn file</p>
-                </div>
-
-                <!-- URL & Keyword -->
-                <div class="space-y-4">
-                    <div>
-                        <label class="text-xs font-semibold text-gray-500 uppercase">Liên kết (Tùy chọn)</label>
-                        <input type="text" id="urlInput" placeholder="https://..." class="w-full mt-1 p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="text-xs font-semibold text-gray-500 uppercase">Từ khóa tìm kiếm <span class="text-red-500">*</span></label>
-                        <div class="relative mt-1">
-                            <input type="text" id="keywordInput" placeholder="Nhập nội dung cần tìm..." class="w-full p-2 pr-10 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium">
-                            <div class="absolute right-2 top-2">
-                                <i data-lucide="search" class="w-4 h-4 text-gray-400"></i>
-                            </div>
-                        </div>
+            <!-- Search Inputs -->
+            <div class="p-5 bg-white space-y-4 shadow-sm z-20">
+                <!-- File Input -->
+                <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-blue-50 transition cursor-pointer relative bg-gray-50 group">
+                    <input type="file" id="fileInput" accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.html" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                    <div class="flex flex-col items-center">
+                        <i data-lucide="upload" class="w-6 h-6 text-gray-400 mb-1"></i>
+                        <p class="text-sm font-medium text-gray-600" id="fileCountLabel">Chọn tài liệu để tra cứu</p>
                     </div>
                 </div>
 
-                <!-- Options -->
-                <div class="mt-4 flex flex-wrap gap-2">
-                    <label class="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200 text-xs cursor-pointer hover:bg-gray-50 select-none">
-                        <input type="checkbox" id="useOCR" class="rounded text-blue-600 focus:ring-blue-500">
-                        <span>OCR (Quét ảnh)</span>
-                    </label>
-                    <label class="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200 text-xs cursor-pointer hover:bg-gray-50 select-none">
-                        <input type="checkbox" id="translateViEn" class="rounded text-purple-600 focus:ring-purple-500">
-                        <span>Dịch Anh-Việt</span>
-                    </label>
+                <!-- Keyword Input -->
+                <div class="relative">
+                    <input type="text" id="keywordInput" placeholder="Nhập từ khóa cần tìm..." 
+                        class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-sm bg-gray-50 focus:bg-white transition"
+                        onkeypress="if(event.key === 'Enter') processFiles()">
+                    <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5"></i>
                 </div>
 
-                <!-- Action Button -->
-                <button onclick="processFiles()" id="btnProcess" class="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-sm transition active:scale-95 flex items-center justify-center gap-2">
-                    <span>Bắt đầu Tìm kiếm</span>
-                </button>
-
-                <!-- Progress -->
-                <div id="progressContainer" class="hidden mt-4">
-                    <div class="flex justify-between text-xs mb-1 text-gray-600">
-                        <span id="progressText">Đang xử lý...</span>
-                        <span id="progressPercent">0%</span>
-                    </div>
-                    <div class="w-full bg-gray-200 rounded-full h-1.5">
-                        <div id="progressBar" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
-                    </div>
-                </div>
-                
-                <!-- History / Bookmarks Hint -->
-                <div class="mt-8 border-t border-gray-200 pt-4">
-                    <button onclick="toggleBookmarkModal()" class="w-full text-left text-sm text-gray-600 hover:bg-gray-100 p-2 rounded flex items-center gap-2 transition">
-                        <i data-lucide="bookmark" class="w-4 h-4"></i> Bookmarks đã lưu
+                <div class="flex gap-2">
+                    <button onclick="processFiles()" id="btnProcess" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-sm transition active:scale-95 flex items-center justify-center gap-2">
+                        <span>Tìm kiếm</span>
                     </button>
+                    <label class="flex items-center justify-center px-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50" title="Dùng OCR cho ảnh">
+                        <input type="checkbox" id="useOCR" class="mr-2"> <span class="text-xs font-medium">OCR</span>
+                    </label>
                 </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="progressContainer" class="hidden px-5 pt-2">
+                <div class="flex justify-between text-xs mb-1 text-gray-600">
+                    <span id="progressText">Đang xử lý...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-1">
+                    <div id="progressBar" class="bg-blue-600 h-1 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Results List (Scrollable) -->
+            <div id="resultsList" class="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
+                <div id="emptyState" class="flex flex-col items-center justify-center h-48 text-gray-400 text-center">
+                    <i data-lucide="layers" class="w-10 h-10 mb-2 opacity-20"></i>
+                    <p class="text-sm">Kết quả tìm kiếm sẽ xuất hiện ở đây</p>
+                </div>
+                <!-- Result items will be injected here -->
             </div>
         </div>
 
-        <!-- MAIN CONTENT AREA (Results List) -->
-        <div class="flex-1 bg-gray-100 flex flex-col h-full relative">
-            <!-- Tabs Header -->
-            <div id="tabsHeader" class="bg-white border-b border-gray-200 px-4 pt-2 flex space-x-1 overflow-x-auto scrollbar-hide">
-                <!-- Tabs will be injected here -->
-            </div>
-
-            <!-- Content Body -->
-            <div id="tabsContent" class="flex-1 overflow-y-auto p-6 relative">
-                 <!-- Empty State -->
-                 <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                    <div class="bg-white p-6 rounded-full shadow-sm mb-4">
-                        <i data-lucide="file-search" class="w-12 h-12 text-blue-200"></i>
-                    </div>
-                    <p class="text-lg font-medium text-gray-500">Kết quả tìm kiếm sẽ hiển thị tại đây</p>
-                    <p class="text-sm">Chọn file và nhập từ khóa để bắt đầu</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- DOCUMENT VIEWER MODAL (FULL PAGE STYLE) -->
-    <!-- Still kept for explicit print requests or focus mode, but removed from main flow -->
-    <div id="docViewerModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-slate-900/90 backdrop-blur-sm transition-opacity" onclick="closeDocModal()"></div>
-        
-        <!-- Modal Content Container -->
-        <div class="absolute inset-0 flex flex-col h-full">
-            
-            <!-- Toolbar -->
-            <div class="h-14 bg-slate-800 text-white flex items-center justify-between px-4 md:px-8 shadow-md z-10 no-print">
+        <!-- MAIN VIEWER (RIGHT SIDE) -->
+        <div class="flex-1 bg-gray-800 flex flex-col h-full relative overflow-hidden">
+            <!-- Viewer Toolbar -->
+            <div class="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-30">
                 <div class="flex items-center gap-3 overflow-hidden">
-                    <div class="bg-blue-600 p-1.5 rounded text-white">
-                        <i data-lucide="file-text" class="w-5 h-5"></i>
-                    </div>
-                    <div>
-                        <h3 id="docViewerTitle" class="font-semibold text-sm md:text-base truncate max-w-[200px] md:max-w-md">Document Name</h3>
-                        <p id="docViewerMeta" class="text-[10px] md:text-xs text-slate-400">Page 1</p>
-                    </div>
+                    <h3 id="viewerTitle" class="font-bold text-gray-800 truncate max-w-md">Chưa chọn tài liệu</h3>
+                    <span id="viewerPageInfo" class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hidden">Trang 1</span>
                 </div>
-
-                <div class="flex items-center gap-2 md:gap-4">
-                    <button onclick="toggleFont()" class="p-2 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition" title="Đổi Font chữ">
-                        <i data-lucide="type" class="w-5 h-5"></i>
+                <div class="flex items-center gap-2">
+                    <button onclick="changePage(-1)" class="p-2 hover:bg-gray-100 rounded text-gray-600 disabled:opacity-30" id="btnPrev">
+                        <i data-lucide="chevron-left" class="w-5 h-5"></i>
                     </button>
-                    <button onclick="window.print()" class="p-2 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition hidden md:block" title="In tài liệu">
-                        <i data-lucide="printer" class="w-5 h-5"></i>
+                    <button onclick="changePage(1)" class="p-2 hover:bg-gray-100 rounded text-gray-600 disabled:opacity-30" id="btnNext">
+                        <i data-lucide="chevron-right" class="w-5 h-5"></i>
                     </button>
-                    <button onclick="closeDocModal()" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-medium transition flex items-center gap-1">
-                        <span>Đóng</span>
-                        <i data-lucide="x" class="w-4 h-4"></i>
-                    </button>
+                    <div class="h-4 w-px bg-gray-300 mx-2"></div>
+                    <button onclick="zoomDoc(0.2)" class="p-2 hover:bg-gray-100 rounded text-gray-600"><i data-lucide="zoom-in" class="w-5 h-5"></i></button>
+                    <button onclick="zoomDoc(-0.2)" class="p-2 hover:bg-gray-100 rounded text-gray-600"><i data-lucide="zoom-out" class="w-5 h-5"></i></button>
                 </div>
             </div>
 
-            <!-- Scrollable Document Area -->
-            <div class="flex-1 overflow-y-auto bg-slate-100/50 p-4 md:p-8 custom-scrollbar scroll-smooth" id="docScrollContainer">
-                <div id="docViewerBody" class="paper-sheet max-w-4xl prose-content font-serif animate-fade-in text-justify">
-                    <!-- Content Injected Here -->
+            <!-- Document Render Area -->
+            <div id="docViewerContainer" class="flex-1 overflow-auto relative bg-slate-700 scroll-smooth">
+                <!-- PDF Canvas or HTML Content will go here -->
+                <div id="pdf-render-container" class="hidden"></div>
+                <div id="html-render-container" class="hidden p-8 max-w-4xl mx-auto bg-white min-h-screen shadow-lg"></div>
+                
+                <!-- Welcome Placeholder in Viewer -->
+                <div id="viewerPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 select-none pointer-events-none">
+                    <i data-lucide="file-search" class="w-16 h-16 mb-4 opacity-10 text-white"></i>
+                    <p class="text-gray-500">Chọn kết quả bên trái để xem bản gốc</p>
                 </div>
-                <div class="max-w-4xl mx-auto text-center mt-4 mb-8 text-gray-400 text-xs no-print">
-                    Kết thúc tài liệu
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- BOOKMARK MODAL -->
-    <div id="bookmarkModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="toggleBookmarkModal()"></div>
-        <div class="bg-white w-full max-w-md rounded-xl shadow-2xl z-50 overflow-hidden transform transition-all animate-slide-in">
-            <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
-                <h3 class="font-bold text-gray-800 flex items-center gap-2"><i data-lucide="bookmark" class="w-4 h-4"></i> Bookmarks</h3>
-                <button onclick="toggleBookmarkModal()" class="text-gray-400 hover:text-red-500"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div class="p-6">
-                <div class="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-100">
-                    <input type="text" id="bmName" placeholder="Tên gợi nhớ..." class="w-full mb-2 p-2 border rounded text-sm focus:outline-none focus:border-blue-500">
-                    <input type="text" id="bmPath" placeholder="Nội dung hoặc Link..." class="w-full mb-2 p-2 border rounded text-sm focus:outline-none focus:border-blue-500">
-                    <button onclick="addBookmark()" class="w-full bg-blue-600 text-white py-2 rounded text-sm font-bold hover:bg-blue-700 transition">Thêm Bookmark</button>
-                </div>
-                <div id="bookmarkList" class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // --- UTILS: TOAST NOTIFICATIONS ---
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            
-            let bgClass = 'bg-gray-800';
-            let icon = 'info';
-            
-            if (type === 'success') { bgClass = 'bg-green-600'; icon = 'check-circle'; }
-            if (type === 'error') { bgClass = 'bg-red-600'; icon = 'alert-circle'; }
-            if (type === 'warning') { bgClass = 'bg-orange-500'; icon = 'alert-triangle'; }
+        // --- GLOBAL STATE ---
+        let uploadedFiles = []; 
+        let currentPdfDoc = null;
+        let currentPageNum = 1;
+        let currentScale = 1.2;
+        let currentFileIndex = -1;
+        let globalKeyword = "";
 
-            toast.className = `${bgClass} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 transform transition-all duration-300 translate-x-full min-w-[300px]`;
-            toast.innerHTML = `
-                <i data-lucide="${icon}" class="w-5 h-5"></i>
-                <span class="text-sm font-medium">${message}</span>
-            `;
-
-            container.appendChild(toast);
+        // --- UTILS: TOAST ---
+        function showToast(msg, type='info') {
+            const box = document.createElement('div');
+            box.className = `p-3 rounded-lg shadow-lg text-white text-sm flex items-center gap-2 animate-fade-in ${type==='error'?'bg-red-600':'bg-blue-600'}`;
+            box.innerHTML = `<i data-lucide="${type==='error'?'alert-circle':'check-circle'}" class="w-4 h-4"></i> ${msg}`;
+            document.getElementById('toastContainer').appendChild(box);
             lucide.createIcons();
-
-            // Animate In
-            requestAnimationFrame(() => toast.classList.remove('translate-x-full'));
-
-            // Auto Remove
-            setTimeout(() => {
-                toast.classList.add('opacity-0', 'translate-x-full');
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
+            setTimeout(()=>box.remove(), 3000);
         }
 
-        // --- CORE LOGIC ---
-        let searchCounter = 0;
-        let isProcessing = false;
-        
-        // UI References
-        const dropZone = document.getElementById('dropZone');
+        // --- UI HANDLERS ---
         const fileInput = document.getElementById('fileInput');
-        const fileCountLabel = document.getElementById('fileCountLabel');
-        const progressBar = document.getElementById('progressBar');
-        const progressContainer = document.getElementById('progressContainer');
-        const progressText = document.getElementById('progressText');
-        const progressPercent = document.getElementById('progressPercent');
-
-        // Initial Icon Load
-        lucide.createIcons();
-
-        // Drag & Drop
-        fileInput.addEventListener('change', () => updateFileStatus(fileInput.files));
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
-            dropZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); });
-        });
-        dropZone.addEventListener('dragenter', () => dropZone.classList.add('bg-blue-50', 'border-blue-500'));
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('bg-blue-50', 'border-blue-500'));
-        dropZone.addEventListener('drop', (e) => {
-            dropZone.classList.remove('bg-blue-50', 'border-blue-500');
-            const files = e.dataTransfer.files;
-            if(files.length) { fileInput.files = files; updateFileStatus(files); }
+        fileInput.addEventListener('change', function() {
+            if(this.files.length > 0) {
+                uploadedFiles = Array.from(this.files); 
+                document.getElementById('fileCountLabel').innerText = `Đã chọn ${this.files.length} file`;
+                document.getElementById('fileCountLabel').className = "text-sm font-bold text-blue-600";
+            }
         });
 
-        function updateFileStatus(files) {
-            if(files.length > 0) {
-                fileCountLabel.textContent = `Đã chọn ${files.length} file`;
-                fileCountLabel.className = 'text-sm font-bold text-green-600 mt-1';
-            } else {
-                fileCountLabel.textContent = 'Chưa chọn file';
-                fileCountLabel.className = 'text-xs text-gray-400 mt-1';
+        // --- SEARCH ENGINE ---
+        async function processFiles() {
+            globalKeyword = document.getElementById('keywordInput').value.trim().toLowerCase();
+            if(!globalKeyword || uploadedFiles.length === 0) return showToast('Nhập từ khóa và chọn file!', 'error');
+
+            document.getElementById('progressContainer').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('resultsList').innerHTML = '';
+
+            const resultsList = document.getElementById('resultsList');
+            let totalMatches = 0;
+
+            for(let i=0; i<uploadedFiles.length; i++) {
+                const file = uploadedFiles[i];
+                updateProgress((i/uploadedFiles.length)*100, `Đang quét: ${file.name}`);
+                
+                const pages = await extractTextForIndexing(file);
+                
+                const matches = [];
+                pages.forEach(page => {
+                    if(page.text.toLowerCase().includes(globalKeyword)) {
+                        const idx = page.text.toLowerCase().indexOf(globalKeyword);
+                        const start = Math.max(0, idx - 60);
+                        const end = Math.min(page.text.length, idx + 150);
+                        let snippet = page.text.substring(start, end);
+                        
+                        const regex = new RegExp(`(${globalKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                        snippet = snippet.replace(regex, '<span class="highlight-text">$1</span>');
+
+                        matches.push({ pageNum: page.pageNum, snippet: "..." + snippet + "..." });
+                    }
+                });
+
+                if(matches.length > 0) {
+                    totalMatches += matches.length;
+                    renderResultCard(resultsList, file.name, i, matches);
+                }
+            }
+
+            updateProgress(100, 'Hoàn tất');
+            setTimeout(() => document.getElementById('progressContainer').classList.add('hidden'), 1000);
+            
+            if(totalMatches === 0) {
+                resultsList.innerHTML = `<div class="text-center text-gray-500 py-10">Không tìm thấy kết quả nào.</div>`;
             }
         }
 
-        // --- DOC VIEWER LOGIC ---
-        let currentFont = 'serif';
-        function toggleFont() {
-            const body = document.getElementById('docViewerBody');
-            currentFont = currentFont === 'serif' ? 'sans' : 'serif';
-            body.className = `paper-sheet max-w-4xl prose-content text-justify ${currentFont === 'serif' ? 'font-serif' : 'font-sans'}`;
-            showToast(`Đã chuyển sang font ${currentFont === 'serif' ? 'Có chân' : 'Không chân'}`, 'info');
-        }
-
-        function openDocModal(uniqueId, title, meta) {
-            const hiddenContent = document.getElementById(`content-${uniqueId}`);
-            // In the new inline mode, content might not be in a hidden div with this ID if rendered directly
-            // But we can pull from the inline container if needed. 
-            // However, with inline view, this is secondary.
-            
-            // If we still want to support the modal for a "focused" view, we can grab the content from the rendered inline div.
-            // Let's look for the inline content div.
-            const inlineContainer = document.querySelector(`[data-id="${uniqueId}"]`);
-            
-            if(!inlineContainer) return showToast('Không tìm thấy nội dung', 'error');
-
-            const modal = document.getElementById('docViewerModal');
-            const body = document.getElementById('docViewerBody');
-            
-            // Set Content
-            document.getElementById('docViewerTitle').textContent = title;
-            document.getElementById('docViewerMeta').textContent = meta;
-            body.innerHTML = inlineContainer.innerHTML;
-
-            // Show Modal
-            modal.classList.remove('hidden');
-            document.body.style.overflow = 'hidden'; // Lock background scroll
-
-            // Reset Scroll
-            document.getElementById('docScrollContainer').scrollTop = 0;
-
-            // Auto scroll to first highlight
-            setTimeout(() => {
-                const hl = body.querySelector('.highlight');
-                if(hl) hl.scrollIntoView({behavior: 'smooth', block: 'center'});
-            }, 300);
-        }
-
-        function closeDocModal() {
-            document.getElementById('docViewerModal').classList.add('hidden');
-            document.body.style.overflow = '';
-        }
-
-        document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeDocModal(); });
-
-        // --- FILE PARSING ---
-        async function extractContent(file) {
+        async function extractTextForIndexing(file) {
             const ext = file.name.split('.').pop().toLowerCase();
-            try {
-                if(ext === 'pdf') return await parsePDF(file);
-                if(ext === 'docx') return await parseDOCX(file);
-                if(['xlsx','xls','csv'].includes(ext)) return await parseExcel(file);
-                if(['txt','html','json','xml'].includes(ext)) return await parseText(file);
-                return [{text: '', error: 'Định dạng không hỗ trợ'}];
-            } catch(e) {
-                console.error(e);
-                return [{text: '', error: e.message}];
-            }
+            if(ext === 'pdf') return await parsePDFText(file);
+            if(ext === 'docx') return await parseDOCXText(file);
+            if(['xlsx','xls','csv'].includes(ext)) return await parseExcelText(file);
+            return await parsePlainText(file);
         }
 
-        async function parsePDF(file) {
+        // --- PARSERS ---
+        async function parsePDFText(file) {
             const ab = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument(ab).promise;
             const pages = [];
             const useOCR = document.getElementById('useOCR').checked;
             let worker = useOCR ? await Tesseract.createWorker('vie') : null;
 
-            for(let i=1; i<=pdf.numPages; i++){
+            for(let i=1; i<=pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 let text = "";
                 if(useOCR) {
-                    const vp = page.getViewport({scale: 2});
+                    const vp = page.getViewport({scale: 1.0});
                     const cvs = document.createElement('canvas');
-                    const ctx = cvs.getContext('2d');
                     cvs.width = vp.width; cvs.height = vp.height;
-                    await page.render({canvasContext: ctx, viewport: vp}).promise;
+                    await page.render({canvasContext: cvs.getContext('2d'), viewport: vp}).promise;
                     const res = await worker.recognize(cvs);
                     text = res.data.text;
                 } else {
@@ -430,319 +279,246 @@
                     text = content.items.map(item => item.str).join(' ');
                 }
                 pages.push({pageNum: i, text: text});
-                updateProgress((i/pdf.numPages)*100, `Đang đọc trang ${i}/${pdf.numPages}`);
             }
             if(worker) await worker.terminate();
             return pages;
         }
 
-        async function parseDOCX(file) {
+        async function parseDOCXText(file) {
             const ab = await file.arrayBuffer();
             const res = await mammoth.extractRawText({arrayBuffer: ab});
             return [{pageNum: 1, text: res.value}];
         }
 
-        async function parseExcel(file) {
+        async function parseExcelText(file) {
             const ab = await file.arrayBuffer();
             const wb = XLSX.read(ab, {type:'array'});
             const pages = [];
             wb.SheetNames.forEach((name, i) => {
-                const ws = wb.Sheets[name];
-                const txt = XLSX.utils.sheet_to_csv(ws);
-                if(txt.trim()) pages.push({pageNum: i+1, sheetName: name, text: txt});
+                const txt = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
+                if(txt.trim()) pages.push({pageNum: i+1, text: txt});
             });
             return pages;
         }
 
-        async function parseText(file) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve([{pageNum: 1, text: e.target.result}]);
-                reader.readAsText(file);
+        async function parsePlainText(file) {
+            return new Promise(r => {
+                const fr = new FileReader();
+                fr.onload = e => r([{pageNum: 1, text: e.target.result}]);
+                fr.readAsText(file);
             });
         }
 
-        function updateProgress(percent, text) {
-            if(progressBar) progressBar.style.width = `${percent}%`;
-            if(progressPercent) progressPercent.innerText = `${Math.round(percent)}%`;
-            if(progressText && text) progressText.innerText = text;
-        }
-
-        // --- TRANSLATION ---
-        async function translateText(text) {
-            try {
-                const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=vi|en`);
-                const data = await res.json();
-                return data.responseStatus === 200 ? data.responseData.translatedText : null;
-            } catch(e) { return null; }
-        }
-
-        // --- SEARCH PROCESS ---
-        async function processFiles() {
-            const keyword = document.getElementById('keywordInput').value.trim();
-            const files = fileInput.files;
-            const url = document.getElementById('urlInput').value.trim();
-
-            if(!keyword) return showToast('Vui lòng nhập từ khóa!', 'error');
-            if(files.length === 0 && !url) return showToast('Vui lòng chọn file hoặc nhập link!', 'warning');
-
-            isProcessing = true;
-            document.getElementById('btnProcess').classList.add('opacity-50', 'pointer-events-none');
-            progressContainer.classList.remove('hidden');
-            document.getElementById('emptyState').classList.add('hidden');
-
-            // 1. Prepare Keywords (Translate if needed)
-            let keywords = [keyword];
-            if(document.getElementById('translateViEn').checked) {
-                updateProgress(10, 'Đang dịch từ khóa...');
-                const trans = await translateText(keyword);
-                if(trans) {
-                    keywords.push(trans);
-                    showToast(`Đã thêm từ khóa dịch: "${trans}"`, 'success');
-                }
-            }
-
-            // 2. Setup Tab
-            searchCounter++;
-            const tabId = `tab-${searchCounter}`;
-            createTab(tabId, keyword);
-
-            // 3. Process Items
-            let tasks = Array.from(files).map(f => ({type: 'file', data: f, name: f.name}));
-            if(url) tasks.push({type: 'url', data: url, name: 'Web Link'});
-
-            const resultsContainer = document.getElementById(`results-${tabId}`);
-            let totalMatches = 0;
-
-            for(let i=0; i<tasks.length; i++) {
-                const task = tasks[i];
-                updateProgress(10 + ((i/tasks.length)*80), `Đang xử lý: ${task.name}`);
-                
-                let pages = [];
-                try {
-                    if(task.type === 'file') pages = await extractContent(task.data);
-                    else {
-                        const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(task.data);
-                        const res = await fetch(proxy);
-                        const blob = await res.blob();
-                        const mockFile = new File([blob], "web_content.html", {type: "text/html"});
-                        pages = await parseText(mockFile);
-                    }
-                } catch(e) {
-                    console.error(e);
-                    continue; // Skip failed files
-                }
-
-                // Search in pages
-                const fileMatches = [];
-                pages.forEach(page => {
-                    const lowerText = page.text.toLowerCase();
-                    const hasMatch = keywords.some(k => lowerText.includes(k.toLowerCase()));
-                    
-                    if(hasMatch) {
-                        // Highlight Logic
-                        let highlightedHTML = page.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                        keywords.forEach(k => {
-                            const regex = new RegExp(`(${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-                            highlightedHTML = highlightedHTML.replace(regex, '<span class="highlight">$1</span>');
-                        });
-
-                        // Extract Snippet (First match context) - Still useful for meta data or summary if needed
-                        const firstMatchIndex = lowerText.indexOf(keywords[0].toLowerCase());
-                        const snippetStart = Math.max(0, firstMatchIndex - 50);
-                        const snippetEnd = Math.min(page.text.length, firstMatchIndex + 150);
-                        const snippet = page.text.substring(snippetStart, snippetEnd) + "...";
-                        
-                        fileMatches.push({
-                            pageNum: page.pageNum,
-                            sheetName: page.sheetName,
-                            snippet: snippet, 
-                            fullHTML: highlightedHTML
-                        });
-                    }
-                });
-
-                if(fileMatches.length > 0) {
-                    totalMatches += fileMatches.length;
-                    renderFileResult(resultsContainer, task.name, fileMatches, tabId, i);
-                }
-            }
-
-            // Finish
-            updateProgress(100, 'Hoàn tất!');
-            setTimeout(() => {
-                progressContainer.classList.add('hidden');
-                document.getElementById('btnProcess').classList.remove('opacity-50', 'pointer-events-none');
-                
-                if(totalMatches === 0) {
-                    resultsContainer.innerHTML = `
-                        <div class="text-center p-8 bg-white rounded-lg shadow-sm border border-gray-200">
-                            <p class="text-gray-500">Không tìm thấy kết quả nào cho "${keyword}"</p>
-                        </div>
-                    `;
-                }
-                
-                // Update badge count
-                document.getElementById(`badge-${tabId}`).textContent = totalMatches;
-            }, 800);
-        }
-
-        // --- UI RENDERING ---
-        function createTab(id, keyword) {
-            // Remove active state
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('border-blue-600', 'text-blue-600', 'bg-blue-50'));
-            document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
-
-            // Button
-            const btn = document.createElement('button');
-            btn.className = `tab-btn flex items-center gap-2 px-4 py-2 border-b-2 border-blue-600 text-blue-600 bg-blue-50 font-medium text-sm whitespace-nowrap transition-colors`;
-            btn.innerHTML = `
-                <span>${keyword}</span>
-                <span id="badge-${id}" class="bg-blue-100 text-blue-800 text-xs px-1.5 rounded-full">...</span>
-                <i data-lucide="x" class="w-3 h-3 ml-1 hover:text-red-500 rounded-full cursor-pointer" onclick="removeTab('${id}', event)"></i>
-            `;
-            btn.onclick = () => switchTab(id);
-            document.getElementById('tabsHeader').appendChild(btn);
-
-            // Pane
-            const pane = document.createElement('div');
-            pane.id = id;
-            pane.className = 'tab-pane h-full flex flex-col animate-fade-in';
-            pane.innerHTML = `<div id="results-${id}" class="space-y-4 pb-20"></div>`;
-            document.getElementById('tabsContent').appendChild(pane);
-            
-            lucide.createIcons();
-            switchTab(id);
-        }
-
-        function switchTab(id) {
-            document.querySelectorAll('.tab-btn').forEach(b => {
-                if(b.onclick.toString().includes(id)) {
-                    b.classList.add('border-blue-600', 'text-blue-600', 'bg-blue-50');
-                    b.classList.remove('border-transparent', 'text-gray-500');
-                } else {
-                    b.classList.remove('border-blue-600', 'text-blue-600', 'bg-blue-50');
-                    b.classList.add('border-transparent', 'text-gray-500');
-                }
-            });
-            document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
-            document.getElementById(id).classList.remove('hidden');
-        }
-
-        function removeTab(id, e) {
-            e.stopPropagation();
-            const btn = e.target.closest('button');
-            const pane = document.getElementById(id);
-            if(btn) btn.remove();
-            if(pane) pane.remove();
-            
-            // Switch to last tab if exists
-            const remaining = document.querySelectorAll('.tab-btn');
-            if(remaining.length > 0) remaining[remaining.length-1].click();
-            else document.getElementById('emptyState').classList.remove('hidden');
-        }
-
-        function renderFileResult(container, fileName, matches, tabId, fileIdx) {
+        // --- RENDER CARD ---
+        function renderResultCard(container, fileName, fileIndex, matches) {
             const card = document.createElement('div');
-            card.className = "bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-4";
+            card.className = "bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition";
             
-            let extIcon = 'file';
-            if(fileName.endsWith('pdf')) extIcon = 'file-text';
-            if(fileName.endsWith('docx')) extIcon = 'file-type';
-            if(fileName.endsWith('xlsx')) extIcon = 'sheet';
-
-            let itemsHTML = matches.map((m, idx) => {
-                const uniqueId = `${tabId}-${fileIdx}-${idx}`;
-                const location = m.sheetName ? `Sheet: ${m.sheetName}` : `Trang ${m.pageNum}`;
-                
-                return `
-                    <div class="p-6 border-b border-gray-100 last:border-0 hover:bg-slate-50 transition group">
-                        <div class="flex justify-between items-center mb-4">
-                            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-100 px-3 py-1 rounded-full border border-gray-200">${location}</span>
-                            
-                            <!-- Nút mở modal để in hoặc xem tập trung (tùy chọn phụ) -->
-                            <button onclick="openDocModal('${uniqueId}', '${fileName}', '${location}')" 
-                                class="text-gray-400 hover:text-blue-600 transition" title="Mở chế độ in/tập trung">
-                                <i data-lucide="maximize-2" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                        
-                        <!-- HIỂN THỊ TRỰC TIẾP NỘI DUNG ĐẦY ĐỦ -->
-                        <div class="prose-content font-serif text-gray-800 text-justify bg-white p-6 rounded shadow-sm border border-gray-100 relative" data-id="${uniqueId}">
-                             ${m.fullHTML}
-                        </div>
+            let icon = 'file';
+            if(fileName.endsWith('pdf')) icon = 'file-text';
+            if(fileName.endsWith('docx')) icon = 'file-type-2';
+            
+            const matchesHTML = matches.map((m, idx) => `
+                <div onclick="viewOriginal(${fileIndex}, ${m.pageNum})" 
+                     class="cursor-pointer p-3 hover:bg-blue-50 transition border-l-4 border-transparent hover:border-blue-500 group">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-600 px-2 py-0.5 rounded group-hover:bg-blue-200 group-hover:text-blue-800">
+                            Trang ${m.pageNum}
+                        </span>
+                        <span class="text-xs text-blue-600 font-medium opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
+                            Xem bản gốc <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                        </span>
                     </div>
-                `;
-            }).join('');
+                    <p class="text-sm text-gray-700 leading-relaxed line-clamp-3">
+                        "${m.snippet}"
+                    </p>
+                </div>
+            `).join('');
 
             card.innerHTML = `
-                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
-                    <div class="p-1.5 bg-white rounded shadow-sm text-blue-600">
-                        <i data-lucide="${extIcon}" class="w-5 h-5"></i>
-                    </div>
-                    <h3 class="font-semibold text-gray-800 text-sm md:text-base truncate flex-1" title="${fileName}">${fileName}</h3>
-                    <span class="text-xs font-medium bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">${matches.length} kết quả</span>
+                <div class="bg-gray-50 px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+                    <i data-lucide="${icon}" class="w-4 h-4 text-blue-600"></i>
+                    <h3 class="font-bold text-sm text-gray-800 truncate flex-1" title="${fileName}">${fileName}</h3>
+                    <span class="text-xs bg-gray-200 px-2 py-0.5 rounded-full text-gray-600">${matches.length}</span>
                 </div>
                 <div class="divide-y divide-gray-50">
-                    ${itemsHTML}
+                    ${matchesHTML}
                 </div>
             `;
-            
             container.appendChild(card);
             lucide.createIcons();
         }
 
-        // --- BOOKMARKS ---
-        const BM_KEY = 'smart_doc_bm';
-        let bookmarks = JSON.parse(localStorage.getItem(BM_KEY) || '[]');
+        // --- VIEWER LOGIC ---
         
-        function toggleBookmarkModal() { 
-            document.getElementById('bookmarkModal').classList.toggle('hidden'); 
-            renderBookmarks();
+        async function viewOriginal(fileIndex, pageNum) {
+            const file = uploadedFiles[fileIndex];
+            currentFileIndex = fileIndex;
+            
+            // Update UI
+            document.getElementById('viewerPlaceholder').classList.add('hidden');
+            document.getElementById('viewerTitle').innerText = file.name;
+            document.getElementById('viewerPageInfo').classList.remove('hidden');
+            document.getElementById('viewerPageInfo').innerText = `Trang ${pageNum}`;
+            
+            document.getElementById('pdf-render-container').classList.add('hidden');
+            document.getElementById('html-render-container').classList.add('hidden');
+            document.getElementById('pdf-render-container').innerHTML = ''; 
+            document.getElementById('html-render-container').innerHTML = '';
+
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            if (ext === 'pdf') {
+                document.getElementById('pdf-render-container').classList.remove('hidden');
+                await renderPDFPage(file, pageNum);
+            } else {
+                document.getElementById('html-render-container').classList.remove('hidden');
+                await renderHTMLContent(file, pageNum);
+            }
+        }
+
+        // 1. PDF RENDERER (Canvas + Highlight Overlay)
+        async function renderPDFPage(file, pageNum) {
+            currentPageNum = pageNum;
+            
+            if(!currentPdfDoc || currentPdfDoc.fileName !== file.name) {
+                const ab = await file.arrayBuffer();
+                currentPdfDoc = await pdfjsLib.getDocument(ab).promise;
+                currentPdfDoc.fileName = file.name;
+            }
+
+            const page = await currentPdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: currentScale });
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            const container = document.getElementById('pdf-render-container');
+            container.innerHTML = ''; 
+            container.appendChild(canvas);
+
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+            // --- HIGHLIGHT LOGIC FOR PDF ---
+            if(globalKeyword) {
+                const textContent = await page.getTextContent();
+                context.globalAlpha = 0.4;
+                context.fillStyle = '#ffff00'; // Pure Yellow Highlight
+
+                textContent.items.forEach(item => {
+                    if (item.str.toLowerCase().includes(globalKeyword)) {
+                        // PDF Transform: [scaleX, skewY, skewX, scaleY, tx, ty]
+                        const tx = item.transform;
+                        // Coords in PDF Space
+                        const x = tx[4];
+                        const y = tx[5];
+                        const w = item.width;
+                        const h = Math.abs(tx[3]); // Height roughly font size
+
+                        // Convert PDF Rect [x, y, x+w, y+h] to Viewport Pixel Rect
+                        // Note: PDF 'y' is usually baseline, and coords go UP. Viewport handles this.
+                        const rect = viewport.convertToViewportRectangle([x, y, x + w, y + h]);
+                        
+                        // Rect result is [x1, y1, x2, y2]. Normalize min/max for canvas fillRect
+                        const minX = Math.min(rect[0], rect[2]);
+                        const maxX = Math.max(rect[0], rect[2]);
+                        const minY = Math.min(rect[1], rect[3]);
+                        const maxY = Math.max(rect[1], rect[3]);
+
+                        context.fillRect(minX, minY, maxX - minX, maxY - minY);
+                    }
+                });
+                context.globalAlpha = 1.0;
+            }
+            // --------------------------------
+
+            document.getElementById('btnPrev').disabled = pageNum <= 1;
+            document.getElementById('btnNext').disabled = pageNum >= currentPdfDoc.numPages;
+            document.getElementById('viewerPageInfo').innerText = `Trang ${pageNum} / ${currentPdfDoc.numPages}`;
+        }
+
+        // 2. HTML RENDERER (DOCX/Excel/Text + Highlight)
+        async function renderHTMLContent(file, pageNum) {
+            const container = document.getElementById('html-render-container');
+            const ext = file.name.split('.').pop().toLowerCase();
+            let html = "";
+
+            if(ext === 'docx') {
+                const ab = await file.arrayBuffer();
+                const res = await mammoth.convertToHtml({arrayBuffer: ab});
+                html = `<div class="prose max-w-none text-justify">${res.value}</div>`;
+            } else if(['xlsx','xls','csv'].includes(ext)) {
+                const ab = await file.arrayBuffer();
+                const wb = XLSX.read(ab, {type:'array'});
+                const ws = wb.Sheets[wb.SheetNames[pageNum-1] || wb.SheetNames[0]];
+                html = XLSX.utils.sheet_to_html(ws);
+                html = html.replace('<table>', '<table class="min-w-full border-collapse border border-gray-300">');
+            } else {
+                const text = await parsePlainText(file);
+                html = `<pre class="whitespace-pre-wrap font-mono text-sm">${text[0].text}</pre>`;
+            }
+            
+            container.innerHTML = html;
+
+            // --- HIGHLIGHT LOGIC FOR HTML ---
+            if(globalKeyword) {
+                const keyword = globalKeyword;
+                const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                
+                // Safe DOM Traversal to avoid breaking HTML tags
+                const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+                const nodesToReplace = [];
+                let node;
+                while(node = walker.nextNode()) {
+                    if (node.nodeValue.toLowerCase().includes(keyword)) {
+                        nodesToReplace.push(node);
+                    }
+                }
+                
+                nodesToReplace.forEach(node => {
+                    const span = document.createElement('span');
+                    span.innerHTML = node.nodeValue.replace(regex, '<span class="highlight-text">$1</span>');
+                    node.parentNode.replaceChild(span, node);
+                });
+                
+                // Scroll to first highlight
+                const firstMatch = container.querySelector('.highlight-text');
+                if(firstMatch) firstMatch.scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+            // --------------------------------
+
+            document.getElementById('btnPrev').disabled = true;
+            document.getElementById('btnNext').disabled = true;
+        }
+
+        // --- VIEWER CONTROLS ---
+        function changePage(delta) {
+            if(!currentPdfDoc) return;
+            const newPage = currentPageNum + delta;
+            if(newPage >= 1 && newPage <= currentPdfDoc.numPages) {
+                viewOriginal(currentFileIndex, newPage);
+            }
+        }
+
+        function zoomDoc(delta) {
+            currentScale = Math.max(0.5, Math.min(3.0, currentScale + delta));
+            if(currentPdfDoc) viewOriginal(currentFileIndex, currentPageNum);
+            else {
+                const el = document.getElementById('html-render-container');
+                const currentZoom = parseFloat(el.style.zoom || 1);
+                el.style.zoom = currentZoom + delta;
+            }
+        }
+
+        function updateProgress(percent, text) {
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressPercent').innerText = `${Math.round(percent)}%`;
+            document.getElementById('progressText').innerText = text;
         }
         
-        function addBookmark() {
-            const name = document.getElementById('bmName').value;
-            const path = document.getElementById('bmPath').value;
-            if(!name || !path) return showToast('Nhập đủ thông tin bookmark!', 'warning');
-            
-            bookmarks.push({id: Date.now(), name, path});
-            localStorage.setItem(BM_KEY, JSON.stringify(bookmarks));
-            
-            document.getElementById('bmName').value = '';
-            document.getElementById('bmPath').value = '';
-            renderBookmarks();
-            showToast('Đã lưu Bookmark', 'success');
-        }
-
-        function renderBookmarks() {
-            const list = document.getElementById('bookmarkList');
-            list.innerHTML = bookmarks.length ? '' : '<p class="text-center text-gray-400 text-sm">Chưa có bookmark</p>';
-            
-            bookmarks.forEach(bm => {
-                const item = document.createElement('div');
-                item.className = 'flex justify-between items-center bg-gray-50 p-2 rounded border mb-2 group';
-                item.innerHTML = `
-                    <div class="overflow-hidden">
-                        <div class="font-bold text-sm truncate">${bm.name}</div>
-                        <div class="text-xs text-gray-500 truncate">${bm.path}</div>
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="navigator.clipboard.writeText('${bm.path}')" class="text-gray-400 hover:text-blue-600"><i data-lucide="copy" class="w-4 h-4"></i></button>
-                        <button onclick="deleteBookmark(${bm.id})" class="text-gray-400 hover:text-red-600"><i data-lucide="trash" class="w-4 h-4"></i></button>
-                    </div>
-                `;
-                list.appendChild(item);
-            });
-            lucide.createIcons();
-        }
-
-        function deleteBookmark(id) {
-            bookmarks = bookmarks.filter(b => b.id !== id);
-            localStorage.setItem(BM_KEY, JSON.stringify(bookmarks));
-            renderBookmarks();
-        }
-
+        lucide.createIcons();
     </script>
 </body>
 </html>
