@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Doc Search - Active State</title>
+    <title>Smart Doc Search - Persistent Mode & Nav</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -93,7 +93,7 @@
                     <i data-lucide="scan-search" class="w-6 h-6"></i>
                     Smart Search
                 </h1>
-                <p class="text-xs text-gray-500 mt-1">Tìm kiếm & Highlight bản gốc</p>
+                <p class="text-xs text-gray-500 mt-1">Tìm kiếm Đa chế độ & Highlight</p>
             </div>
 
             <!-- Search Inputs -->
@@ -105,6 +105,16 @@
                         <i data-lucide="upload" class="w-6 h-6 text-gray-400 mb-1"></i>
                         <p class="text-sm font-medium text-gray-600" id="fileCountLabel">Chọn tài liệu để tra cứu</p>
                     </div>
+                </div>
+
+                <!-- Mode Selection -->
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold text-gray-500 uppercase">Chế độ tìm kiếm</label>
+                    <select id="searchMode" onchange="saveSearchMode(this.value)" class="text-xs border border-gray-300 rounded p-1 bg-gray-50 focus:ring-blue-500 focus:border-blue-500 cursor-pointer">
+                        <option value="relative" selected>Tương đối (Chứa cụm từ)</option>
+                        <option value="smart">Thông minh (Đủ từ khóa)</option>
+                        <option value="exact">Chính xác (Nguyên văn)</option>
+                    </select>
                 </div>
 
                 <!-- Keyword Input -->
@@ -158,10 +168,10 @@
                 <div class="flex items-center gap-1.5 md:gap-3 bg-gray-50 p-1 rounded-lg border border-gray-200">
                     <!-- Page Nav -->
                     <div class="flex items-center">
-                        <button onclick="changePage(-1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 disabled:opacity-30 transition" id="btnPrev">
+                        <button onclick="changePage(-1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 disabled:opacity-30 transition" id="btnPrev" title="Trang trước">
                             <i data-lucide="chevron-left" class="w-4 h-4"></i>
                         </button>
-                        <button onclick="changePage(1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 disabled:opacity-30 transition" id="btnNext">
+                        <button onclick="changePage(1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 disabled:opacity-30 transition" id="btnNext" title="Trang sau">
                             <i data-lucide="chevron-right" class="w-4 h-4"></i>
                         </button>
                     </div>
@@ -218,11 +228,29 @@
         // --- GLOBAL STATE ---
         let uploadedFiles = []; 
         let currentPdfDoc = null;
+        let currentWorkbook = null; // Store Excel Workbook
         let currentPageNum = 1;
         let currentScale = 1.0; 
         let currentFileIndex = -1;
+        
         let globalKeyword = "";
-        let currentActiveResultId = null; // Track active item
+        let globalSearchMode = "relative"; // 'relative', 'smart', 'exact'
+        let currentActiveResultId = null;
+
+        // --- INIT & PERSISTENCE ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedMode = localStorage.getItem('smart_doc_search_mode');
+            if (savedMode) {
+                document.getElementById('searchMode').value = savedMode;
+                globalSearchMode = savedMode;
+            }
+            lucide.createIcons();
+        });
+
+        function saveSearchMode(mode) {
+            localStorage.setItem('smart_doc_search_mode', mode);
+            globalSearchMode = mode;
+        }
 
         // --- UTILS: TOAST ---
         function showToast(msg, type='info') {
@@ -254,12 +282,7 @@
                 }
             }
         }
-
-        function setSpecificZoom(val) {
-            currentScale = parseFloat(val);
-            refreshCurrentView();
-        }
-
+        function setSpecificZoom(val) { currentScale = parseFloat(val); refreshCurrentView(); }
         function applyZoom(delta) {
             let newScale = currentScale + delta;
             newScale = Math.max(0.5, Math.min(3.0, newScale));
@@ -267,15 +290,13 @@
             updateZoomUI(currentScale);
             refreshCurrentView();
         }
-
-        function refreshCurrentView() {
-            if(currentFileIndex === -1) return;
-            viewOriginal(currentFileIndex, currentPageNum, true);
-        }
+        function refreshCurrentView() { if(currentFileIndex !== -1) viewOriginal(currentFileIndex, currentPageNum, true); }
 
         // --- SEARCH ENGINE ---
         async function processFiles() {
-            globalKeyword = document.getElementById('keywordInput').value.trim().toLowerCase();
+            globalKeyword = document.getElementById('keywordInput').value.trim();
+            globalSearchMode = document.getElementById('searchMode').value; // Ensure current value is used
+            
             if(!globalKeyword || uploadedFiles.length === 0) return showToast('Nhập từ khóa và chọn file!', 'error');
 
             document.getElementById('progressContainer').classList.remove('hidden');
@@ -284,6 +305,8 @@
 
             const resultsList = document.getElementById('resultsList');
             let totalMatches = 0;
+            const kwLower = globalKeyword.toLowerCase();
+            const smartTokens = kwLower.split(/\s+/).filter(t => t.length > 0);
 
             for(let i=0; i<uploadedFiles.length; i++) {
                 const file = uploadedFiles[i];
@@ -293,15 +316,49 @@
                 
                 const matches = [];
                 pages.forEach(page => {
-                    if(page.text.toLowerCase().includes(globalKeyword)) {
-                        const idx = page.text.toLowerCase().indexOf(globalKeyword);
-                        const start = Math.max(0, idx - 60);
-                        const end = Math.min(page.text.length, idx + 150);
-                        let snippet = page.text.substring(start, end);
-                        
-                        const regex = new RegExp(`(${globalKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-                        snippet = snippet.replace(regex, '<span class="highlight-text">$1</span>');
+                    const textLower = page.text.toLowerCase();
+                    let isMatch = false;
 
+                    if (globalSearchMode === 'exact') {
+                        const regex = new RegExp(`\\b${globalKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                        isMatch = regex.test(page.text);
+                    } else if (globalSearchMode === 'smart') {
+                        isMatch = smartTokens.every(token => textLower.includes(token));
+                    } else {
+                        isMatch = textLower.includes(kwLower);
+                    }
+
+                    if(isMatch) {
+                        let snippet = "";
+                        let firstIndex = -1;
+
+                        if (globalSearchMode === 'smart') {
+                            firstIndex = textLower.length;
+                            smartTokens.forEach(t => {
+                                const idx = textLower.indexOf(t);
+                                if(idx !== -1 && idx < firstIndex) firstIndex = idx;
+                            });
+                        } else {
+                            firstIndex = textLower.indexOf(kwLower);
+                        }
+
+                        if (firstIndex !== -1 && firstIndex !== textLower.length) {
+                            const start = Math.max(0, firstIndex - 60);
+                            const end = Math.min(page.text.length, firstIndex + 150);
+                            snippet = page.text.substring(start, end);
+                        } else {
+                            snippet = page.text.substring(0, 200);
+                        }
+
+                        let highlightRegex;
+                        if (globalSearchMode === 'smart') {
+                            const pattern = smartTokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+                            highlightRegex = new RegExp(`(${pattern})`, 'gi');
+                        } else {
+                            highlightRegex = new RegExp(`(${globalKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                        }
+                        
+                        snippet = snippet.replace(highlightRegex, '<span class="highlight-text">$1</span>');
                         matches.push({ pageNum: page.pageNum, snippet: "..." + snippet + "..." });
                     }
                 });
@@ -335,7 +392,6 @@
             const pages = [];
             const useOCR = document.getElementById('useOCR').checked;
             let worker = useOCR ? await Tesseract.createWorker('vie') : null;
-
             for(let i=1; i<=pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 let text = "";
@@ -381,7 +437,7 @@
             });
         }
 
-        // --- RENDER CARD (UPDATED WITH ID AND ACTIVE HANDLER) ---
+        // --- RENDER CARD ---
         function renderResultCard(container, fileName, fileIndex, matches) {
             const card = document.createElement('div');
             card.className = "bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition";
@@ -391,9 +447,7 @@
             if(fileName.endsWith('docx')) icon = 'file-type-2';
             
             const matchesHTML = matches.map((m, idx) => {
-                // Generate Unique ID for DOM Element
                 const resultId = `result-${fileIndex}-${idx}`;
-                
                 return `
                 <div id="${resultId}"
                      onclick="viewOriginal(${fileIndex}, ${m.pageNum}, false, '${resultId}')" 
@@ -426,26 +480,19 @@
             lucide.createIcons();
         }
 
-        // --- VIEWER LOGIC (UPDATED WITH ACTIVE STATE LOGIC) ---
-        
+        // --- VIEWER LOGIC ---
         async function viewOriginal(fileIndex, pageNum, preserveView = false, clickedElementId = null) {
             const file = uploadedFiles[fileIndex];
             
-            // --- ACTIVE STATE HANDLING ---
             if (clickedElementId) {
-                // Remove active class from old item
                 if (currentActiveResultId) {
                     const oldEl = document.getElementById(currentActiveResultId);
                     if (oldEl) oldEl.classList.remove('active');
                 }
-                
-                // Add active class to new item
                 const newEl = document.getElementById(clickedElementId);
                 if (newEl) newEl.classList.add('active');
-                
                 currentActiveResultId = clickedElementId;
             }
-            // -----------------------------
             
             const isFileChange = currentFileIndex !== fileIndex;
             currentFileIndex = fileIndex;
@@ -454,7 +501,7 @@
             document.getElementById('viewerPlaceholder').classList.add('hidden');
             document.getElementById('viewerTitle').innerText = file.name;
             document.getElementById('viewerPageInfo').classList.remove('hidden');
-            document.getElementById('viewerPageInfo').innerText = `Trang ${pageNum}`;
+            // Text update depends on type later
             
             const pdfContainer = document.getElementById('pdf-render-container');
             const htmlContainer = document.getElementById('html-render-container');
@@ -474,9 +521,16 @@
                     htmlContainer.innerHTML = '';
                     await renderHTMLContent(file, pageNum);
                 } else {
-                    htmlContainer.style.transform = `scale(${currentScale})`;
-                    if(currentScale > 1) htmlContainer.style.transformOrigin = 'top left'; 
-                    else htmlContainer.style.transformOrigin = 'top center';
+                    // Just update view if not a file change and content exists (except for excel page switch)
+                    if(['xlsx','xls','csv'].includes(ext)) {
+                        // Excel needs re-render on page/sheet switch
+                         htmlContainer.innerHTML = '';
+                         await renderHTMLContent(file, pageNum);
+                    } else {
+                        htmlContainer.style.transform = `scale(${currentScale})`;
+                        if(currentScale > 1) htmlContainer.style.transformOrigin = 'top left'; 
+                        else htmlContainer.style.transformOrigin = 'top center';
+                    }
                 }
             }
         }
@@ -502,13 +556,21 @@
 
             await page.render({ canvasContext: context, viewport: viewport }).promise;
 
+            // --- PDF HIGHLIGHT LOGIC ---
             if(globalKeyword) {
                 const textContent = await page.getTextContent();
                 context.globalAlpha = 0.4;
                 context.fillStyle = '#ffff00';
 
+                const tokens = (globalSearchMode === 'smart') 
+                    ? globalKeyword.toLowerCase().split(/\s+/).filter(t=>t.length>0) 
+                    : [globalKeyword.toLowerCase()];
+
                 textContent.items.forEach(item => {
-                    if (item.str.toLowerCase().includes(globalKeyword)) {
+                    const strLower = item.str.toLowerCase();
+                    const shouldHighlight = tokens.some(token => strLower.includes(token));
+
+                    if (shouldHighlight) {
                         const tx = item.transform;
                         const x = tx[4];
                         const y = tx[5];
@@ -525,6 +587,7 @@
                 context.globalAlpha = 1.0;
             }
 
+            // Update Nav State
             document.getElementById('btnPrev').disabled = pageNum <= 1;
             document.getElementById('btnNext').disabled = pageNum >= currentPdfDoc.numPages;
             document.getElementById('viewerPageInfo').innerText = `Trang ${pageNum} / ${currentPdfDoc.numPages}`;
@@ -538,55 +601,98 @@
 
             const ext = file.name.split('.').pop().toLowerCase();
             let html = "";
+            let totalSheets = 1;
 
             if(ext === 'docx') {
                 const ab = await file.arrayBuffer();
                 const res = await mammoth.convertToHtml({arrayBuffer: ab});
                 html = `<div class="prose max-w-none text-justify">${res.value}</div>`;
+                // Disable nav for docx
+                document.getElementById('btnPrev').disabled = true;
+                document.getElementById('btnNext').disabled = true;
+                document.getElementById('viewerPageInfo').innerText = `Trang 1`;
+
             } else if(['xlsx','xls','csv'].includes(ext)) {
-                const ab = await file.arrayBuffer();
-                const wb = XLSX.read(ab, {type:'array'});
-                const ws = wb.Sheets[wb.SheetNames[pageNum-1] || wb.SheetNames[0]];
+                // EXCEL LOGIC WITH NAVIGATION
+                if (!currentWorkbook) { // Load if missing
+                    const ab = await file.arrayBuffer();
+                    currentWorkbook = XLSX.read(ab, {type:'array'});
+                }
+                
+                totalSheets = currentWorkbook.SheetNames.length;
+                const ws = currentWorkbook.Sheets[currentWorkbook.SheetNames[pageNum-1] || currentWorkbook.SheetNames[0]];
                 html = XLSX.utils.sheet_to_html(ws);
                 html = html.replace('<table>', '<table class="min-w-full border-collapse border border-gray-300">');
+                
+                // Update Nav for Excel
+                document.getElementById('btnPrev').disabled = pageNum <= 1;
+                document.getElementById('btnNext').disabled = pageNum >= totalSheets;
+                document.getElementById('viewerPageInfo').innerText = `Sheet ${pageNum} / ${totalSheets}`;
+
             } else {
                 const text = await parsePlainText(file);
                 html = `<pre class="whitespace-pre-wrap font-mono text-sm">${text[0].text}</pre>`;
+                // Disable nav for text
+                document.getElementById('btnPrev').disabled = true;
+                document.getElementById('btnNext').disabled = true;
+                document.getElementById('viewerPageInfo').innerText = `Trang 1`;
             }
             
             container.innerHTML = html;
 
             if(globalKeyword) {
-                const keyword = globalKeyword;
-                const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                let highlightRegex;
+                if (globalSearchMode === 'smart') {
+                    const tokens = globalKeyword.split(/\s+/).filter(t => t.length > 0);
+                    const pattern = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+                    highlightRegex = new RegExp(`(${pattern})`, 'gi');
+                } else {
+                    highlightRegex = new RegExp(`(${globalKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                }
+
                 const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
                 const nodesToReplace = [];
                 let node;
                 while(node = walker.nextNode()) {
-                    if (node.nodeValue.toLowerCase().includes(keyword)) {
+                    if (highlightRegex.test(node.nodeValue)) {
                         nodesToReplace.push(node);
                     }
                 }
                 nodesToReplace.forEach(node => {
                     const span = document.createElement('span');
-                    span.innerHTML = node.nodeValue.replace(regex, '<span class="highlight-text">$1</span>');
+                    span.innerHTML = node.nodeValue.replace(highlightRegex, '<span class="highlight-text">$1</span>');
                     node.parentNode.replaceChild(span, node);
                 });
                 
                 const firstMatch = container.querySelector('.highlight-text');
                 if(firstMatch) firstMatch.scrollIntoView({behavior: 'smooth', block: 'center'});
             }
-
-            document.getElementById('btnPrev').disabled = true;
-            document.getElementById('btnNext').disabled = true;
         }
 
         // --- VIEWER CONTROLS ---
-        function changePage(delta) {
-            if(!currentPdfDoc) return;
+        async function changePage(delta) {
+            if (currentFileIndex === -1) return;
+            const file = uploadedFiles[currentFileIndex];
+            const ext = file.name.split('.').pop().toLowerCase();
+            
+            let totalPages = 1;
+            
+            if (ext === 'pdf') {
+                if (!currentPdfDoc) return;
+                totalPages = currentPdfDoc.numPages;
+            } else if (['xlsx', 'xls', 'csv'].includes(ext)) {
+                if (!currentWorkbook) {
+                     const ab = await file.arrayBuffer();
+                     currentWorkbook = XLSX.read(ab, {type:'array'});
+                }
+                totalPages = currentWorkbook.SheetNames.length;
+            } else {
+                return; // DOCX/Text/HTML are treated as single page
+            }
+
             const newPage = currentPageNum + delta;
-            if(newPage >= 1 && newPage <= currentPdfDoc.numPages) {
-                viewOriginal(currentFileIndex, newPage, false, null);
+            if (newPage >= 1 && newPage <= totalPages) {
+                viewOriginal(currentFileIndex, newPage, false, null); // preserveView=false to redraw
             }
         }
 
