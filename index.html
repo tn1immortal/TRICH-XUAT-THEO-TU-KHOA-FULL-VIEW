@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Doc Search - Highlight Original</title>
+    <title>Smart Doc Search - Zoom Control</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -52,11 +52,11 @@
         
         canvas {
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
-            max-width: 100%;
+            max-width: none !important; /* Allow canvas to scale with zoom */
             height: auto !important;
         }
 
-        /* Highlight Marker in Text (for snippets & HTML viewer) */
+        /* Highlight Marker in Text */
         .highlight-text {
             background-color: #fef08a; /* Yellow-200 */
             color: #854d0e; /* Yellow-800 */
@@ -132,28 +132,61 @@
                     <i data-lucide="layers" class="w-10 h-10 mb-2 opacity-20"></i>
                     <p class="text-sm">Kết quả tìm kiếm sẽ xuất hiện ở đây</p>
                 </div>
-                <!-- Result items will be injected here -->
             </div>
         </div>
 
         <!-- MAIN VIEWER (RIGHT SIDE) -->
         <div class="flex-1 bg-gray-800 flex flex-col h-full relative overflow-hidden">
             <!-- Viewer Toolbar -->
-            <div class="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-30">
-                <div class="flex items-center gap-3 overflow-hidden">
-                    <h3 id="viewerTitle" class="font-bold text-gray-800 truncate max-w-md">Chưa chọn tài liệu</h3>
-                    <span id="viewerPageInfo" class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hidden">Trang 1</span>
+            <div class="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6 shadow-sm z-30">
+                <div class="flex items-center gap-3 overflow-hidden flex-1">
+                    <h3 id="viewerTitle" class="font-bold text-gray-800 truncate max-w-[150px] md:max-w-xs">Chưa chọn tài liệu</h3>
+                    <span id="viewerPageInfo" class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hidden whitespace-nowrap">Trang 1</span>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button onclick="changePage(-1)" class="p-2 hover:bg-gray-100 rounded text-gray-600 disabled:opacity-30" id="btnPrev">
-                        <i data-lucide="chevron-left" class="w-5 h-5"></i>
-                    </button>
-                    <button onclick="changePage(1)" class="p-2 hover:bg-gray-100 rounded text-gray-600 disabled:opacity-30" id="btnNext">
-                        <i data-lucide="chevron-right" class="w-5 h-5"></i>
-                    </button>
-                    <div class="h-4 w-px bg-gray-300 mx-2"></div>
-                    <button onclick="zoomDoc(0.2)" class="p-2 hover:bg-gray-100 rounded text-gray-600"><i data-lucide="zoom-in" class="w-5 h-5"></i></button>
-                    <button onclick="zoomDoc(-0.2)" class="p-2 hover:bg-gray-100 rounded text-gray-600"><i data-lucide="zoom-out" class="w-5 h-5"></i></button>
+                
+                <!-- NEW: ZOOM CONTROLS -->
+                <div class="flex items-center gap-1.5 md:gap-3 bg-gray-50 p-1 rounded-lg border border-gray-200">
+                    <!-- Page Nav -->
+                    <div class="flex items-center">
+                        <button onclick="changePage(-1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 disabled:opacity-30 transition" id="btnPrev">
+                            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="changePage(1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 disabled:opacity-30 transition" id="btnNext">
+                            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="h-4 w-px bg-gray-300"></div>
+
+                    <!-- Zoom Controls -->
+                    <div class="flex items-center gap-1">
+                        <button onclick="applyZoom(-0.1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition" title="Thu nhỏ">
+                            <i data-lucide="minus" class="w-3.5 h-3.5"></i>
+                        </button>
+                        
+                        <div class="relative group">
+                            <select id="zoomSelect" onchange="setSpecificZoom(this.value)" 
+                                class="appearance-none bg-transparent text-xs font-semibold text-gray-700 w-16 text-center focus:outline-none cursor-pointer py-1">
+                                <option value="0.5">50%</option>
+                                <option value="0.75">75%</option>
+                                <option value="1.0" selected>100%</option>
+                                <option value="1.25">125%</option>
+                                <option value="1.5">150%</option>
+                                <option value="1.75">175%</option>
+                                <option value="2.0">200%</option>
+                                <option value="2.5">250%</option>
+                                <option value="3.0">300%</option>
+                            </select>
+                            <!-- Custom arrow for select -->
+                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-gray-500">
+                                <svg class="h-3 w-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
+                            </div>
+                        </div>
+
+                        <button onclick="applyZoom(0.1)" class="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition" title="Phóng to">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -161,9 +194,9 @@
             <div id="docViewerContainer" class="flex-1 overflow-auto relative bg-slate-700 scroll-smooth">
                 <!-- PDF Canvas or HTML Content will go here -->
                 <div id="pdf-render-container" class="hidden"></div>
-                <div id="html-render-container" class="hidden p-8 max-w-4xl mx-auto bg-white min-h-screen shadow-lg"></div>
+                <div id="html-render-container" class="hidden p-8 max-w-4xl mx-auto bg-white min-h-screen shadow-lg transition-transform origin-top-center"></div>
                 
-                <!-- Welcome Placeholder in Viewer -->
+                <!-- Welcome Placeholder -->
                 <div id="viewerPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 select-none pointer-events-none">
                     <i data-lucide="file-search" class="w-16 h-16 mb-4 opacity-10 text-white"></i>
                     <p class="text-gray-500">Chọn kết quả bên trái để xem bản gốc</p>
@@ -177,7 +210,7 @@
         let uploadedFiles = []; 
         let currentPdfDoc = null;
         let currentPageNum = 1;
-        let currentScale = 1.2;
+        let currentScale = 1.0; // Default 100%
         let currentFileIndex = -1;
         let globalKeyword = "";
 
@@ -200,6 +233,45 @@
                 document.getElementById('fileCountLabel').className = "text-sm font-bold text-blue-600";
             }
         });
+
+        // --- ZOOM LOGIC ---
+        function updateZoomUI(scale) {
+            const select = document.getElementById('zoomSelect');
+            const percent = Math.round(scale * 100);
+            
+            // Try to find exact match in options
+            let matched = false;
+            for(let opt of select.options) {
+                if(Math.abs(parseFloat(opt.value) - scale) < 0.05) {
+                    select.value = opt.value;
+                    matched = true;
+                    break;
+                }
+            }
+            
+            // If custom zoom level (via buttons), we might want to show it roughly or just leave it
+            // For simplicity, we just keep the value logic internal if not matched perfectly
+        }
+
+        function setSpecificZoom(val) {
+            currentScale = parseFloat(val);
+            refreshCurrentView();
+        }
+
+        function applyZoom(delta) {
+            let newScale = currentScale + delta;
+            newScale = Math.max(0.5, Math.min(3.0, newScale)); // Limit 50% - 300%
+            currentScale = newScale;
+            
+            updateZoomUI(currentScale);
+            refreshCurrentView();
+        }
+
+        function refreshCurrentView() {
+            if(currentFileIndex === -1) return;
+            // Re-call viewOriginal with current parameters
+            viewOriginal(currentFileIndex, currentPageNum, true); // true = prevent scroll reset if desired
+        }
 
         // --- SEARCH ENGINE ---
         async function processFiles() {
@@ -351,36 +423,52 @@
 
         // --- VIEWER LOGIC ---
         
-        async function viewOriginal(fileIndex, pageNum) {
+        async function viewOriginal(fileIndex, pageNum, preserveView = false) {
             const file = uploadedFiles[fileIndex];
-            currentFileIndex = fileIndex;
             
+            // Only clear if changing file
+            const isFileChange = currentFileIndex !== fileIndex;
+            currentFileIndex = fileIndex;
+            currentPageNum = pageNum;
+
             // Update UI
             document.getElementById('viewerPlaceholder').classList.add('hidden');
             document.getElementById('viewerTitle').innerText = file.name;
             document.getElementById('viewerPageInfo').classList.remove('hidden');
             document.getElementById('viewerPageInfo').innerText = `Trang ${pageNum}`;
             
-            document.getElementById('pdf-render-container').classList.add('hidden');
-            document.getElementById('html-render-container').classList.add('hidden');
-            document.getElementById('pdf-render-container').innerHTML = ''; 
-            document.getElementById('html-render-container').innerHTML = '';
-
+            const pdfContainer = document.getElementById('pdf-render-container');
+            const htmlContainer = document.getElementById('html-render-container');
             const ext = file.name.split('.').pop().toLowerCase();
 
             if (ext === 'pdf') {
-                document.getElementById('pdf-render-container').classList.remove('hidden');
+                pdfContainer.classList.remove('hidden');
+                htmlContainer.classList.add('hidden');
+                
+                // If refreshing zoom (preserveView), we re-render canvas
+                // We wipe content to redraw
+                pdfContainer.innerHTML = '';
                 await renderPDFPage(file, pageNum);
+
             } else {
-                document.getElementById('html-render-container').classList.remove('hidden');
-                await renderHTMLContent(file, pageNum);
+                htmlContainer.classList.remove('hidden');
+                pdfContainer.classList.add('hidden');
+                
+                if (isFileChange || !htmlContainer.innerHTML) {
+                    htmlContainer.innerHTML = '';
+                    await renderHTMLContent(file, pageNum);
+                } else {
+                    // Just update Zoom
+                    htmlContainer.style.transform = `scale(${currentScale})`;
+                    // If zoom > 1, ensure origin is top-center or let user scroll
+                    if(currentScale > 1) htmlContainer.style.transformOrigin = 'top left'; 
+                    else htmlContainer.style.transformOrigin = 'top center';
+                }
             }
         }
 
-        // 1. PDF RENDERER (Canvas + Highlight Overlay)
+        // 1. PDF RENDERER
         async function renderPDFPage(file, pageNum) {
-            currentPageNum = pageNum;
-            
             if(!currentPdfDoc || currentPdfDoc.fileName !== file.name) {
                 const ab = await file.arrayBuffer();
                 currentPdfDoc = await pdfjsLib.getDocument(ab).promise;
@@ -396,52 +484,46 @@
             canvas.width = viewport.width;
 
             const container = document.getElementById('pdf-render-container');
-            container.innerHTML = ''; 
             container.appendChild(canvas);
 
             await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-            // --- HIGHLIGHT LOGIC FOR PDF ---
+            // --- HIGHLIGHT LOGIC ---
             if(globalKeyword) {
                 const textContent = await page.getTextContent();
                 context.globalAlpha = 0.4;
-                context.fillStyle = '#ffff00'; // Pure Yellow Highlight
+                context.fillStyle = '#ffff00';
 
                 textContent.items.forEach(item => {
                     if (item.str.toLowerCase().includes(globalKeyword)) {
-                        // PDF Transform: [scaleX, skewY, skewX, scaleY, tx, ty]
                         const tx = item.transform;
-                        // Coords in PDF Space
                         const x = tx[4];
                         const y = tx[5];
                         const w = item.width;
-                        const h = Math.abs(tx[3]); // Height roughly font size
-
-                        // Convert PDF Rect [x, y, x+w, y+h] to Viewport Pixel Rect
-                        // Note: PDF 'y' is usually baseline, and coords go UP. Viewport handles this.
+                        const h = Math.abs(tx[3]); 
                         const rect = viewport.convertToViewportRectangle([x, y, x + w, y + h]);
-                        
-                        // Rect result is [x1, y1, x2, y2]. Normalize min/max for canvas fillRect
                         const minX = Math.min(rect[0], rect[2]);
                         const maxX = Math.max(rect[0], rect[2]);
                         const minY = Math.min(rect[1], rect[3]);
                         const maxY = Math.max(rect[1], rect[3]);
-
                         context.fillRect(minX, minY, maxX - minX, maxY - minY);
                     }
                 });
                 context.globalAlpha = 1.0;
             }
-            // --------------------------------
 
             document.getElementById('btnPrev').disabled = pageNum <= 1;
             document.getElementById('btnNext').disabled = pageNum >= currentPdfDoc.numPages;
             document.getElementById('viewerPageInfo').innerText = `Trang ${pageNum} / ${currentPdfDoc.numPages}`;
         }
 
-        // 2. HTML RENDERER (DOCX/Excel/Text + Highlight)
+        // 2. HTML RENDERER
         async function renderHTMLContent(file, pageNum) {
             const container = document.getElementById('html-render-container');
+            // Reset Scale for new render
+            container.style.transform = `scale(${currentScale})`;
+            container.style.transformOrigin = currentScale > 1 ? 'top left' : 'top center';
+
             const ext = file.name.split('.').pop().toLowerCase();
             let html = "";
 
@@ -462,12 +544,9 @@
             
             container.innerHTML = html;
 
-            // --- HIGHLIGHT LOGIC FOR HTML ---
             if(globalKeyword) {
                 const keyword = globalKeyword;
                 const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-                
-                // Safe DOM Traversal to avoid breaking HTML tags
                 const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
                 const nodesToReplace = [];
                 let node;
@@ -476,18 +555,15 @@
                         nodesToReplace.push(node);
                     }
                 }
-                
                 nodesToReplace.forEach(node => {
                     const span = document.createElement('span');
                     span.innerHTML = node.nodeValue.replace(regex, '<span class="highlight-text">$1</span>');
                     node.parentNode.replaceChild(span, node);
                 });
                 
-                // Scroll to first highlight
                 const firstMatch = container.querySelector('.highlight-text');
                 if(firstMatch) firstMatch.scrollIntoView({behavior: 'smooth', block: 'center'});
             }
-            // --------------------------------
 
             document.getElementById('btnPrev').disabled = true;
             document.getElementById('btnNext').disabled = true;
@@ -499,16 +575,6 @@
             const newPage = currentPageNum + delta;
             if(newPage >= 1 && newPage <= currentPdfDoc.numPages) {
                 viewOriginal(currentFileIndex, newPage);
-            }
-        }
-
-        function zoomDoc(delta) {
-            currentScale = Math.max(0.5, Math.min(3.0, currentScale + delta));
-            if(currentPdfDoc) viewOriginal(currentFileIndex, currentPageNum);
-            else {
-                const el = document.getElementById('html-render-container');
-                const currentZoom = parseFloat(el.style.zoom || 1);
-                el.style.zoom = currentZoom + delta;
             }
         }
 
